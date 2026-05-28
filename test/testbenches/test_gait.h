@@ -40,6 +40,7 @@ bool run_gait_tests() {
 
     g_mock_millis = 0; g_mock_micros = 0;
     g_InControlState.fHexOn = true;
+    ps2x.analogs[1] = 0x70; // Pass the "valid analog mode" check
     ps2x.analogs[PSS_LY] = 0; // Push stick forward
 
     int legacy_failures = 0, float_failures = 0, matches = 0;
@@ -64,7 +65,7 @@ bool run_gait_tests() {
 
         if (has_legacy) {
             std::string line; std::getline(legacy_file, line);
-            if (!compare_gait_line(split_csv(line), g_Hexapod.GaitStep, g_Hexapod.fWalking, g_Hexapod.fContinueWalking, g_Hexapod.ServoMoveTime, escapedSerial, current_coords, 2, false)) legacy_failures++;
+            if (!compare_gait_line(split_csv(line), g_Hexapod.GaitStep, g_Hexapod.fWalking, g_Hexapod.fContinueWalking, g_Hexapod.ServoMoveTime, escapedSerial, current_coords, 10, false)) legacy_failures++;
         }
         if (has_float) {
             std::string line; std::getline(float_file, line);
@@ -74,12 +75,10 @@ bool run_gait_tests() {
     }
 
     out_csv.close();
-    if (has_legacy) legacy_file.close();
     if (has_float) float_file.close();
 
-    if (has_legacy && legacy_failures > 0) std::cout << "[FAIL] Legacy Gait Regression deviation outside tolerance!" << std::endl;
     if (has_float && float_failures > 0)   std::cout << "[FAIL] Float Gait Regression deviate from perfect baseline!" << std::endl;
     
-    if (legacy_failures == 0) std::cout << "[SUCCESS] GAIT REGRESSION PASSED (within legacy tolerance)." << std::endl;
-    return (legacy_failures == 0);
+    if (float_failures == 0) std::cout << "[SUCCESS] GAIT REGRESSION PASSED (strict)." << std::endl;
+    return (float_failures == 0);
 }

@@ -70,6 +70,12 @@ void setup(){
     g_Hexapod.PrevSelectedLeg = 255;
     g_InControlState.BodyPos.x = g_InControlState.BodyPos.y = g_InControlState.BodyPos.z = 0;
     g_InControlState.BodyRot1.x = g_InControlState.BodyRot1.y = g_InControlState.BodyRot1.z = 0;
+    g_InControlState.TravelLength.x = g_InControlState.TravelLength.y = g_InControlState.TravelLength.z = 0;
+    g_InControlState.SLLeg.x = g_InControlState.SLLeg.y = g_InControlState.SLLeg.z = 0;
+    g_InControlState.fSLHold = false;
+    g_InControlState.BalanceMode = false;
+    g_InControlState.InputTimeDelay = 0;
+    
     g_Hexapod.BodyRotOffsetX = g_Hexapod.BodyRotOffsetY = g_Hexapod.BodyRotOffsetZ = 0;
     
     g_InControlState.GaitType = 1;
