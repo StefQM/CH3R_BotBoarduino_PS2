@@ -111,11 +111,11 @@
 #endif
 
 #ifdef __BLACKPILL_STM32F411__
-    #define SOUND_PIN    PA4
-    #define PS2_DAT      PA7
-    #define PS2_CMD      PB0
-    #define PS2_SEL      PB1
-    #define PS2_CLK      PB2
+    #define SOUND_PIN    PA1
+    #define PS2_SEL      PA4
+    #define PS2_CLK      PA5
+    #define PS2_DAT      PA6
+    #define PS2_CMD      PA7
     #define cSSC_OUT     PA2
     #define cSSC_IN      PA3
 #endif

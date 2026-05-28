@@ -1,92 +1,91 @@
-# BotBoarduino CH3R PS2 (Lynxmotion Phoenix Port)
+# BotBoarduino CH3R Hexapod - STM32 Modernized Edition
 
-## Project Overview
-This repository contains a modernized, Object-Oriented C++ implementation of the classic Lynxmotion Phoenix hexapod codebase. It is specifically configured for a circular hexapod (CH3R) utilizing a **BotBoarduino** (or Arduino Pro Mini / ATmega328P), an **SSC-32 Servo Controller**, and a **PS2 Wireless Controller**.
+This repository contains the modernized, Object-Oriented C++ firmware for the Lynxmotion CH3R Hexapod. Originally designed for the 8-bit ATmega328P, this codebase has been fully migrated and optimized for the **STM32F411CEU6 (BlackPill)**.
 
-The codebase leverages highly optimized, 16-bit scaled integer math and `PROGMEM` lookup tables to execute complex 3D Inverse Kinematics (IK), 3D Forward Kinematics (FK), and gait generation strictly within a 50Hz (20ms) control loop on an 8-bit microcontroller, completely avoiding slow floating-point overhead.
+## 🚀 Architectural Highlights
 
-## Hardware Requirements
-* **Microcontroller:** Lynxmotion BotBoarduino (ATmega328P, 16MHz)
-* **Servo Controller:** Lynxmotion SSC-32 (configured for Binary Mode `cSSC_BINARYMODE`)
-* **Input:** PS2 Wireless Controller
-* **Robot Chassis:** CH3R (Circular Hexapod 3-DOF, with optional 4-DOF support)
+- **Object-Oriented Design:** The logic is encapsulated into modular classes (`Hexapod`, `Leg`, `InputController`, `ServoDriver`), making the code extensible and easy to maintain.
+- **Hardware Acceleration:**
+    - **Native Hardware SPI:** PS2 controller polling is handled by the STM32 SPI1 peripheral, eliminating blocking software delays.
+    - **Hardware USART:** High-speed communication with the SSC-32 servo controller uses USART2, freeing up the CPU during movement updates.
+    - **Hardware FPU:** Core kinematics and gait calculations utilize the STM32's Floating Point Unit for extreme precision and smooth motion.
+- **Ultra-Low CPU Load:** The entire robot brain executes in **~850µs**, utilizing only **~4%** of the available 100MHz CPU power (per 20ms frame).
+- **USB CDC Console:** Live telemetry and the Terminal Monitor are accessible directly via the BlackPill's USB-C port.
 
-## PS2 Controller Mapping
+## 🛠️ Project Structure
 
-### Common Controls (Global)
-These controls work regardless of the active mode:
-* **Start:** Turn the robot **On** (Stand up) or **Off** (Sit down and relax servos).
-* **Triangle:** Quick toggle between **Stand Up** (65mm height) and **Sit Down** (0mm height).
-* **Square:** Toggle **Balance Mode** On/Off.
-* **D-Pad Up / Down:** Manually adjust **Body Height** (incremental).
-* **D-Pad Left / Right:** Adjust **Gait Speed** (Left = Slower, Right = Faster).
-* **L1:** Enter **Translate Mode** (Shift body).
-* **L2:** Enter **Rotate Mode** (Tilt body).
-* **Circle:** Enter **Single Leg Mode**.
-* **Cross:** Enter **GP Player Mode** (Run pre-recorded sequences).
+- `src/`: Core logic files modernized for 32-bit C++.
+    - `main.cpp`: Orchestrates the 50Hz control loop.
+    - `Hexapod.cpp`: Manages gaits, body balancing, and timing.
+    - `Leg.cpp`: Implements 3D Inverse and Forward Kinematics using `float` math.
+- `lib/`: Hardware-specific drivers.
+    - `PS2X_lib`: Optimized Hardware SPI driver for the wireless receiver.
+- `test/`: Comprehensive regression suite verifying IK, gait, and servo bitstreams against a verified Golden Master.
 
-### Walk Mode (Default)
-Active immediately after pressing Start.
-* **Left Stick:** Walk Forward/Back and Strafe Left/Right.
-* **Right Stick:** Rotate (Turn) Left/Right.
-* **Select:** Cycle through the **5 Gaits** (Ripple, Tripod, Triple Tripod, etc.).
-* **R1:** Toggle **Double Leg Lift Height** (robot steps higher).
-* **R2:** Toggle **Double Travel Length** (robot takes longer strides).
-* **R3 (Right Stick Click):** Toggle **Walk Method** (Swaps walk/rotate between sticks).
+## 🔌 Hardware Pinout (BlackPill)
 
-### Translate Mode (Hold L1)
-Shifts the body's position relative to its feet.
-* **Left Stick:** Shift body X (Side-to-Side) and Z (Forward-Backward).
-* **Right Stick:** Shift body Y (Up-Down) and Rotate body Y (Yaw).
+Mapping of physical headers (Top = USB Port side).
 
-### Rotate Mode (Hold L2)
-Tilts the body in place.
-* **Left Stick:** Pitch (Tilt Forward/Back) and Roll (Tilt Side-to-Side).
-* **Right Stick:** Rotate body Y (Yaw).
+| Left Hdr | Function | Bot Board  |      | Right Hdr | Function                 | Bot Board    | 
+| :---     | :---     | :---       | :--- | :---      | :---                     | :---         | 
+| **B12**  | -        | RS232-Tx   | | **5V**    | 5Vin                     | 5Vin         | 
+| **B13**  | -        | RS232-Rx   | | **GND**   | GND                      | GND          | 
+| **B14**  | -        | RS232-RTS  | | **3V3**   | n.c.                     | RESETn       | 
+| **B15**  | n.c.     | GND        | | **B10**   | n.c.                     | 5Vin         | 
+| **A8**   | -        | -          | | **B2**    | -                        | (GND/noPU)   | 
+| **A9**   | -        | -          | | **B1**    | -                        | (LED-Y)      | 
+| **A10**  | -        | -          | | **B0**    | -                        | (LED-B)      | 
+| **A11**  | USB-DM   | -          | | **A7**    | **PS2_CMD** (SPI1)       | (LED-R/noPU) | 
+| **A12**  | USB-DP   | -          | | **A6**    | **PS2_DAT** (SPI1+PU10k) | -            |
+| **A15**  | -        | -          | | **A5**    | **PS2_CLK** (SPI1+PU10k) | -            |
+| **B3**   | -        | -          | | **A4**    | **PS2_SEL** (SPI1)       | (SOUND)      |
+| **B4**   | -        | -          | | **A3**    | **SSC_RX** (UART2)       | -            |
+| **B5**   | -        | Vservo 4:1 | | **A2**    | **SSC_TX** (UART2)       | -            |
+| **B6**   | -        | Vlogic 4:1 | | **A1**    | **SOUND**                | -            |
+| **B7**   | -        |            | | **A0**    | -                        |              |
+| **B8**   | -        |            | | **NRST**  | RESETn                   |              |
+| **B9**   | -        |            | | **C15**   | -                        |              |
+| **5V**   | 5Vin     |            | | **C14**   | -                        |              |
+| **GND**  | GND      |            | | **C13**   | -                        |              |
+| **3V3**  | 3V3out   |            | | **VBAT**  | Vbat                     |              |
 
-### Single Leg Mode (Circle)
-Manually controls an individual leg.
-* **Select:** Cycle active leg (RR, RM, RF, LR, LM, LF).
-* **Left Stick:** Move the foot in X (Side-to-Side) and Z (Forward-Backward).
-* **Right Stick:** Move the foot in Y (Up-Down).
-* **R2:** **Hold/Lock** the leg in its current position.
+## 🎮 Controller Mapping
 
-### GP Player Mode (Cross)
-Plays back sequences stored on the SSC-32.
-* **Select:** Cycle through available Sequences (0–5).
-* **R2:** **Start** the selected sequence.
+| Button | Action |
+| :--- | :--- |
+| **Start** | Turn Robot On / Off |
+| **Triangle** | Stand Up (65mm) / Sit Down (0mm) |
+| **Square** | Toggle Balance Mode (On/Off) |
+| **Circle** | Toggle Single Leg Mode |
+| **Cross** | Toggle GP Player Mode (Sequence execution) |
+| **L1** | Toggle Translate Mode |
+| **L2** | Toggle Rotate Mode |
+| **R1** | Toggle Double Leg Lift Height (80mm / 50mm) |
+| **R2** | Toggle Double Travel Length / Start GP Sequence |
+| **R3** | Toggle Walk Method (Mode 1 / Mode 2) |
+| **Select** | Switch Gait / Leg / GP Sequence |
+| **D-Pad Up/Down** | Manual Body Height Adjust (+/- 10mm) |
+| **D-Pad L/R** | Manual Speed Adjust (+/- 50ms) |
+| **L-Stick** | Walk / Translate / Rotate X-Z |
+| **R-Stick** | Rotate Y (Yaw) / Shift Y |
 
-### Safety Fallback
-* **Connection Loss:** If the PS2 receiver loses connection for more than ~100ms, the robot will automatically execute an emergency sit-down and deactivate servos.
+## 🚀 Future Roadmap & Optimizations
 
-## Modernization & Refactoring Summary
-This project recently underwent a complete architectural overhaul to transition from a monolithic, procedural structure into a clean, modular, and safe Object-Oriented architecture, without sacrificing the strict performance requirements of the 8-bit AVR hardware.
+1. **Direct PWM (Eliminate SSC-32):** Use the BlackPill's 18+ hardware timers to drive servos natively, removing serial latency and allowing high-frequency updates.
+2. **NeoPixel Integration:** Use reserved pins **`PB0/PB1`** (TIM3) with PWM+DMA for non-blocking status LEDs/Eyes.
+3. **Continuous Trajectories:** Upgrade the Gait Engine to use **Bézier curves** or **Cycloids** for organic, fluid movement instead of discrete steps.
+4. **Sensor Fusion:** Add an **IMU (MPU-6050)** via I2C for autonomous body leveling and tilt compensation.
+5. **Production Polish:** Optional removal of the microsecond profiler ('P' command) once feature development is finalized.
+6. **Test Expansion:** Continue maintaining the **Dual-Validation** test suite (Legacy vs. Float Master) for all new features.
 
-### Key Achievements
-1. **Architecture:**
-   - **`Leg` Class:** Encapsulates IK math, FK math, and coordinate state for each individual leg.
-   - **`Hexapod` Class:** Manages robot-wide coordination, including Gaits, Balance, and Timing.
-   - **Hardware Abstraction:** `InputController` and `ServoDriver` are now abstract "contracts," allowing the core mathematical engine to operate completely independently of the specific hardware peripherals.
-2. **Safety & Reliability:**
-   - **Regression Suite:** A full PC-based simulation and testing environment (`test/build.bat`) that verifies IK math, gait trajectories, PS2 input state machine transitions, and exact SSC-32 bitstream formatting against a "Golden Master" baseline.
-   - **Timing Stability:** Implemented a fixed 50Hz (20ms) control loop and resolved historical blocking bugs to guarantee zero dropped packets or PS2 timeouts.
-3. **Modernization:**
-   - **Code Cleanup:** Localized global variables, extracted heavy `PROGMEM` lookup tables into `Hex_Tables.h`, and implemented a clean build pipeline.
-   - **Strict Math Parity:** Ensured every bit of the original scaled integer math was preserved to maintain maximum performance on the ATmega328P.
+## 💻 Building and Flashing
 
-### Refactored File Map
-- **`BotBoarduino_CH3R_PS2.ino`**: High-level setup and main control loop.
-- **`Hexapod.h / .cpp`**: The robot "brain" (Gait and Balance coordination).
-- **`Leg.h / .cpp`**: The robotic limb "muscles" (Kinematics).
-- **`InputController.h` / `PS2_controller.cpp`**: User interface layer.
-- **`ServoDriver.h` / `phoenix_driver_ssc32.cpp`**: Hardware output layer.
-- **`ControlState.h`**: Shared data structures (`COORD3D`, `INCONTROLSTATE`).
-- **`Hex_Tables.h`**: Static math lookup tables and hardware configuration arrays.
-- **`Hex_Cfg.h` / `Hex_Globals.h`**: Project configuration flags and external linkages.
+This project uses **VSCode + PlatformIO**.
 
-## Testing
-To verify the integrity of the math and logic engines on a PC, run the regression suite:
-```bat
-.\test\build.bat
-```
-This compiles the code using a mocked hardware environment and asserts 100% parity against saved Golden Master snapshots.
+1. Install the **ST-STM32** platform in PlatformIO.
+2. Connect your BlackPill via **ST-LINK v2** (for flashing) and **USB-C** (for Serial).
+3. Select the `blackpill_f411ce` environment and click **Build** or **Upload**.
+4. Use the **Serial Monitor** at **57600 baud** to access the Phoenix Monitor.
+
+---
+*Modernized with 🤖 Gemini CLI.*

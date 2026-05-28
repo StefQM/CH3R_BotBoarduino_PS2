@@ -6,7 +6,7 @@
 //Programmer: Jeroen Janssen [aka Xan]
 //         Kurt Eckhardt(KurtE) converted to C and Arduino
 //
-// This version of the Phoenix code was ported over to the Arduino Environement
+// This version of the Phoenix code was ported over to the Arduino Environment
 // and is specifically configured for the Lynxmotion BotBoarduino 
 //=============================================================================
 // Header Files
@@ -47,6 +47,7 @@ void BalCalcOneLeg(short x, short z, short y, uint8_t leg) { g_Hexapod.BalCalcOn
 void WriteOutputs();
 void SingleLegControl();
 void StartUpdateServos();
+void UpdateIK();
 void SoundNoTimer(uint8_t _pin, unsigned long duration, unsigned int frequency);
 #ifdef OPT_TERMINAL_MONITOR
 bool TerminalMonitor(void);
@@ -60,6 +61,11 @@ void setup(){
 #endif
     g_ServoDriver.Init();
     if (g_InputController.FIsDiagnosticModeRequested()) g_ServoDriver.SSCForwarder();
+    
+    // Boot Beep
+    pinMode(SOUND_PIN, OUTPUT);
+    MSound(3, 60, 2000, 80, 2250, 100, 2500);
+    
     delay(10);
     
     for (uint8_t LegIndex= 0; LegIndex <= 5; LegIndex++ ) {
@@ -88,88 +94,96 @@ void setup(){
     g_InputController.Init();
     g_Hexapod.ServoMoveTime = 150;
     g_InControlState.fHexOn = 0;
+    g_InControlState.fPrev_HexOn = 0;
     g_Hexapod.fLowVoltageShutdown = false;
 }
 
 void loop(void)
 {
+    static unsigned long lTransitionStartTime = 0;
     g_Hexapod.lLogicTimeStart = micros();
     g_Hexapod.lTimerStart = millis(); 
+
+    if (!g_Hexapod.fLowVoltageShutdown) g_InputController.ControlInput();
+
     if (CheckVoltage()) {
         if (g_InControlState.fPrev_HexOn || (g_Hexapod.AllDown == 0)) {
+            Serial.println("[LOG] Low Voltage Shutdown Triggered");
+            g_InControlState.fHexOn = false;
+            UpdateIK();
             g_Hexapod.ServoMoveTime = 600;
             StartUpdateServos();
             g_ServoDriver.CommitServoDriver(g_Hexapod.ServoMoveTime);
             MSound(3, 100, 2500, 80, 2250, 60, 2000);
             delay(600);
-        } else {
+        }
+        g_ServoDriver.FreeServos();
+        g_Hexapod.Eyes = 0;
+        g_InControlState.fHexOn = false;
+        g_InControlState.fPrev_HexOn = false;
+    } else {
+        // [STARTUP TRANSITION]
+        if (g_InControlState.fHexOn && !g_InControlState.fPrev_HexOn) {
+            Serial.println("[LOG] Engaging motors at height 0");
+            
+            // 1. Snap to sitting position to engage motors without violent movement
+            short targetHeight = g_InControlState.BodyPos.y;
+            g_InControlState.BodyPos.y = 0;
+            UpdateIK(); 
+            g_Hexapod.ServoMoveTime = 200; // Snap
+            StartUpdateServos();
+            g_ServoDriver.CommitServoDriver(g_Hexapod.ServoMoveTime);
+            
+            MSound(3, 60, 2000, 80, 2250, 100, 2500); // Beep during snap
+            delay(200);
+
+            // 2. Smoothly stand up
+            Serial.println("[LOG] Standing Up (600ms move)");
+            g_InControlState.BodyPos.y = targetHeight;
+            UpdateIK();
+            g_Hexapod.ServoMoveTime = 600;
+            StartUpdateServos();
+            g_ServoDriver.CommitServoDriver(g_Hexapod.ServoMoveTime);
+            delay(600); // Block to ensure move completes
+            
+            lTransitionStartTime = millis();
+            g_Hexapod.Eyes = 1;
+            g_InControlState.fPrev_HexOn = true;
+            return; 
+        }
+
+        // [SHUTDOWN TRANSITION]
+        if (!g_InControlState.fHexOn && g_InControlState.fPrev_HexOn) {
+            Serial.println("[LOG] Shutting Down (600ms move)");
+            MSound(3, 100, 2500, 80, 2250, 60, 2000); // Beep first
+            UpdateIK(); 
+            g_Hexapod.ServoMoveTime = 600;
+            StartUpdateServos();
+            g_ServoDriver.CommitServoDriver(g_Hexapod.ServoMoveTime);
+            delay(600); // Block to ensure move completes
             g_ServoDriver.FreeServos();
             g_Hexapod.Eyes = 0;
+            g_InControlState.fPrev_HexOn = false;
+            return; 
         }
-        g_InControlState.fHexOn = false;
-    } else {
-        if (!g_Hexapod.fLowVoltageShutdown) g_InputController.ControlInput();
+
         WriteOutputs();
 
 #ifdef OPT_GPPLAYER
         g_ServoDriver.GPPlayer();
 #endif
 
-        SingleLegControl();
-        GaitSeq();
-                 
-        g_Hexapod.TotalTransX = g_Hexapod.TotalTransZ = g_Hexapod.TotalTransY = 0;
-        g_Hexapod.TotalXBal1 = g_Hexapod.TotalYBal1 = g_Hexapod.TotalZBal1 = 0;
-
-        if (g_InControlState.BalanceMode) {
-            for (uint8_t LegIndex = 0; LegIndex <= 2; LegIndex++) {
-                BalCalcOneLeg (-g_Legs[LegIndex].posX+g_Legs[LegIndex].gaitPosX, 
-                            g_Legs[LegIndex].posZ+g_Legs[LegIndex].gaitPosZ, 
-                            (g_Legs[LegIndex].posY-(short)cInitPosY[LegIndex])+g_Legs[LegIndex].gaitPosY, LegIndex);
-            }
-            for (uint8_t LegIndex = 3; LegIndex <= 5; LegIndex++) {
-                BalCalcOneLeg(g_Legs[LegIndex].posX+g_Legs[LegIndex].gaitPosX, 
-                            g_Legs[LegIndex].posZ+g_Legs[LegIndex].gaitPosZ, 
-                            (g_Legs[LegIndex].posY-(short)cInitPosY[LegIndex])+g_Legs[LegIndex].gaitPosY, LegIndex);
-            }
-            BalanceBody();
-        }
-              
-        g_Hexapod.IKSolution = g_Hexapod.IKSolutionWarning = g_Hexapod.IKSolutionError = 0;
-                
-        for (uint8_t LegIndex = 0; LegIndex <= 2; LegIndex++) {    
-            g_Legs[LegIndex].calculateBodyFK(-g_Legs[LegIndex].posX+g_InControlState.BodyPos.x+g_Legs[LegIndex].gaitPosX - g_Hexapod.TotalTransX,
-                    g_Legs[LegIndex].posY+g_InControlState.BodyPos.y+g_Legs[LegIndex].gaitPosY - g_Hexapod.TotalTransY,
-                    g_Legs[LegIndex].posZ+g_InControlState.BodyPos.z+g_Legs[LegIndex].gaitPosZ - g_Hexapod.TotalTransZ,
-                    g_Legs[LegIndex].gaitRotY, g_Hexapod.BodyRotOffsetX, g_Hexapod.BodyRotOffsetY, g_Hexapod.BodyRotOffsetZ, g_Hexapod.TotalXBal1, g_Hexapod.TotalYBal1, g_Hexapod.TotalZBal1);
-
-            g_Legs[LegIndex].calculateLegIK(g_Legs[LegIndex].posX-g_InControlState.BodyPos.x+g_Legs[LegIndex].bodyFKPosX-(g_Legs[LegIndex].gaitPosX - g_Hexapod.TotalTransX), 
-                    g_Legs[LegIndex].posY+g_InControlState.BodyPos.y-g_Legs[LegIndex].bodyFKPosY+g_Legs[LegIndex].gaitPosY - g_Hexapod.TotalTransY,
-                    g_Legs[LegIndex].posZ+g_InControlState.BodyPos.z-g_Legs[LegIndex].bodyFKPosZ+g_Legs[LegIndex].gaitPosZ - g_Hexapod.TotalTransZ);
-        }
-
-        for (uint8_t LegIndex = 3; LegIndex <= 5; LegIndex++) {
-            g_Legs[LegIndex].calculateBodyFK(g_Legs[LegIndex].posX-g_InControlState.BodyPos.x+g_Legs[LegIndex].gaitPosX - g_Hexapod.TotalTransX,
-                    g_Legs[LegIndex].posY+g_InControlState.BodyPos.y+g_Legs[LegIndex].gaitPosY - g_Hexapod.TotalTransY,
-                    g_Legs[LegIndex].posZ+g_InControlState.BodyPos.z+g_Legs[LegIndex].gaitPosZ - g_Hexapod.TotalTransZ,
-                    g_Legs[LegIndex].gaitRotY, g_Hexapod.BodyRotOffsetX, g_Hexapod.BodyRotOffsetY, g_Hexapod.BodyRotOffsetZ, g_Hexapod.TotalXBal1, g_Hexapod.TotalYBal1, g_Hexapod.TotalZBal1);
-            g_Legs[LegIndex].calculateLegIK(g_Legs[LegIndex].posX+g_InControlState.BodyPos.x-g_Legs[LegIndex].bodyFKPosX+g_Legs[LegIndex].gaitPosX - g_Hexapod.TotalTransX,
-                    g_Legs[LegIndex].posY+g_InControlState.BodyPos.y-g_Legs[LegIndex].bodyFKPosY+g_Legs[LegIndex].gaitPosY - g_Hexapod.TotalTransY,
-                    g_Legs[LegIndex].posZ+g_InControlState.BodyPos.z-g_Legs[LegIndex].bodyFKPosZ+g_Legs[LegIndex].gaitPosZ - g_Hexapod.TotalTransZ);
-        }
-        
-        CheckAngles();
-                
         if (g_InControlState.fHexOn) {
-            if (!g_InControlState.fPrev_HexOn) {
-                MSound(3, 60, 2000, 80, 2250, 100, 2500);
-                g_Hexapod.Eyes = 1;
-            }
-            
+            SingleLegControl();
+            GaitSeq();
+            UpdateIK();
+                    
             if ((abs(g_InControlState.TravelLength.x)>cTravelDeadZone) || (abs(g_InControlState.TravelLength.z)>cTravelDeadZone) || (abs(g_InControlState.TravelLength.y*2)>cTravelDeadZone)) {         
                 g_Hexapod.ServoMoveTime = g_Hexapod.NomGaitSpeed + (g_InControlState.InputTimeDelay*2) + g_InControlState.SpeedControl;
                 if (g_InControlState.BalanceMode) g_Hexapod.ServoMoveTime += 100;
-            } else g_Hexapod.ServoMoveTime = 200 + g_InControlState.SpeedControl;
+            } else {
+                g_Hexapod.ServoMoveTime = 200 + g_InControlState.SpeedControl;
+            }
             
             StartUpdateServos();
             
@@ -179,7 +193,6 @@ void loop(void)
             if (lSerialFrameTime > g_Hexapod.lSerialTimeMax) g_Hexapod.lSerialTimeMax = lSerialFrameTime;
 
             g_Hexapod.fContinueWalking = false;
-                
             for (uint8_t LegIndex = 0; LegIndex <= 5; LegIndex++) {
                 if ( (abs(g_Legs[LegIndex].gaitPosX) > 2) || (abs(g_Legs[LegIndex].gaitPosY) > 2) || (abs(g_Legs[LegIndex].gaitPosZ) > 2) || (abs(g_Legs[LegIndex].gaitRotY) > 2) ) {
                     g_Hexapod.fContinueWalking = true;
@@ -212,19 +225,6 @@ void loop(void)
 
                 delay(min(max ((int)(g_Hexapod.PrevServoMoveTime - g_Hexapod.CycleTime), 1), (int)g_Hexapod.NomGaitSpeed)); 
             }
-            delay(20); 
-        } else {
-            if (g_InControlState.fPrev_HexOn || (g_Hexapod.AllDown == 0)) {
-                g_Hexapod.ServoMoveTime = 600;
-                StartUpdateServos();
-                g_ServoDriver.CommitServoDriver(g_Hexapod.ServoMoveTime);
-                MSound(3, 100, 2500, 80, 2250, 60, 2000);
-                delay(600);
-            } else {
-                g_ServoDriver.FreeServos();
-                g_Hexapod.Eyes = 0;
-            }
-            delay(20);
         }
     }
 
@@ -232,8 +232,53 @@ void loop(void)
     TerminalMonitor();
 #endif
 
+    delay(20);
     g_Hexapod.PrevServoMoveTime = g_Hexapod.ServoMoveTime;
     g_InControlState.fPrev_HexOn = g_InControlState.fHexOn;
+}
+
+void UpdateIK() {
+    g_Hexapod.TotalTransX = g_Hexapod.TotalTransZ = g_Hexapod.TotalTransY = 0;
+    g_Hexapod.TotalXBal1 = g_Hexapod.TotalYBal1 = g_Hexapod.TotalZBal1 = 0;
+
+    if (g_InControlState.BalanceMode) {
+        for (uint8_t LegIndex = 0; LegIndex <= 2; LegIndex++) {
+            BalCalcOneLeg (-g_Legs[LegIndex].posX+g_Legs[LegIndex].gaitPosX, 
+                        g_Legs[LegIndex].posZ+g_Legs[LegIndex].gaitPosZ, 
+                        (g_Legs[LegIndex].posY-(short)cInitPosY[LegIndex])+g_Legs[LegIndex].gaitPosY, LegIndex);
+        }
+        for (uint8_t LegIndex = 3; LegIndex <= 5; LegIndex++) {
+            BalCalcOneLeg(g_Legs[LegIndex].posX+g_Legs[LegIndex].gaitPosX, 
+                        g_Legs[LegIndex].posZ+g_Legs[LegIndex].gaitPosZ, 
+                        (g_Legs[LegIndex].posY-(short)cInitPosY[LegIndex])+g_Legs[LegIndex].gaitPosY, LegIndex);
+        }
+        BalanceBody();
+    }
+            
+    g_Hexapod.IKSolution = g_Hexapod.IKSolutionWarning = g_Hexapod.IKSolutionError = 0;
+            
+    for (uint8_t LegIndex = 0; LegIndex <= 2; LegIndex++) {    
+        g_Legs[LegIndex].calculateBodyFK(-g_Legs[LegIndex].posX+g_InControlState.BodyPos.x+g_Legs[LegIndex].gaitPosX - g_Hexapod.TotalTransX,
+                g_Legs[LegIndex].posY+g_InControlState.BodyPos.y+g_Legs[LegIndex].gaitPosY - g_Hexapod.TotalTransY,
+                g_Legs[LegIndex].posZ+g_InControlState.BodyPos.z+g_Legs[LegIndex].gaitPosZ - g_Hexapod.TotalTransZ,
+                g_Legs[LegIndex].gaitRotY, g_Hexapod.BodyRotOffsetX, g_Hexapod.BodyRotOffsetY, g_Hexapod.BodyRotOffsetZ, g_Hexapod.TotalXBal1, g_Hexapod.TotalYBal1, g_Hexapod.TotalZBal1);
+
+        g_Legs[LegIndex].calculateLegIK(g_Legs[LegIndex].posX-g_InControlState.BodyPos.x+g_Legs[LegIndex].bodyFKPosX-(g_Legs[LegIndex].gaitPosX - g_Hexapod.TotalTransX), 
+                g_Legs[LegIndex].posY+g_InControlState.BodyPos.y-g_Legs[LegIndex].bodyFKPosY+g_Legs[LegIndex].gaitPosY - g_Hexapod.TotalTransY,
+                g_Legs[LegIndex].posZ+g_InControlState.BodyPos.z-g_Legs[LegIndex].bodyFKPosZ+g_Legs[LegIndex].gaitPosZ - g_Hexapod.TotalTransZ);
+    }
+
+    for (uint8_t LegIndex = 3; LegIndex <= 5; LegIndex++) {
+        g_Legs[LegIndex].calculateBodyFK(g_Legs[LegIndex].posX-g_InControlState.BodyPos.x+g_Legs[LegIndex].gaitPosX - g_Hexapod.TotalTransX,
+                g_Legs[LegIndex].posY+g_InControlState.BodyPos.y+g_Legs[LegIndex].gaitPosY - g_Hexapod.TotalTransY,
+                g_Legs[LegIndex].posZ+g_InControlState.BodyPos.z+g_Legs[LegIndex].gaitPosZ - g_Hexapod.TotalTransZ,
+                g_Legs[LegIndex].gaitRotY, g_Hexapod.BodyRotOffsetX, g_Hexapod.BodyRotOffsetY, g_Hexapod.BodyRotOffsetZ, g_Hexapod.TotalXBal1, g_Hexapod.TotalYBal1, g_Hexapod.TotalZBal1);
+        g_Legs[LegIndex].calculateLegIK(g_Legs[LegIndex].posX+g_InControlState.BodyPos.x-g_Legs[LegIndex].bodyFKPosX+g_Legs[LegIndex].gaitPosX - g_Hexapod.TotalTransX,
+                g_Legs[LegIndex].posY+g_InControlState.BodyPos.y-g_Legs[LegIndex].bodyFKPosY+g_Legs[LegIndex].gaitPosY - g_Hexapod.TotalTransY,
+                g_Legs[LegIndex].posZ+g_InControlState.BodyPos.z-g_Legs[LegIndex].bodyFKPosZ+g_Legs[LegIndex].gaitPosZ - g_Hexapod.TotalTransZ);
+    }
+    
+    CheckAngles();
 }
 
 void StartUpdateServos() {        
@@ -295,14 +340,9 @@ void SoundNoTimer(uint8_t _pin, unsigned long duration,  unsigned int frequency)
     while (toggle_count--) { *pin_port ^= pin_mask; delayMicroseconds(lusDelayPerHalfCycle); }
     *pin_port &= ~(pin_mask);
 #else
-    pinMode(_pin, OUTPUT);
-    long toggle_count = 2 * frequency * duration / 1000;
-    long lusDelayPerHalfCycle = 1000000L/(frequency * 2);
-    while (toggle_count--) {
-        digitalWrite(_pin, !digitalRead(_pin));
-        delayMicroseconds(lusDelayPerHalfCycle);
-    }
-    digitalWrite(_pin, LOW);
+    tone(_pin, frequency, duration);
+    delay(duration);
+    noTone(_pin);
 #endif
 }
 

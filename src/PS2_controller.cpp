@@ -188,9 +188,7 @@ void InputController::ControlInput(void)
             } else {
                 //Turn on
                 g_InControlState.fHexOn = 1;
-                /* Kurt [9/9/2012] - AdjustLegPositionsToBodyHeight
-                fAdjustLegPositions = true;
-                */
+                g_BodyYOffset = 65;
             }
         }
 
@@ -474,9 +472,14 @@ void PS2TurnRobotOff(void)
     g_BodyYShift = 0;
     g_InControlState.SelectedLeg = 255;
     g_InControlState.fHexOn = 0;
-    /* Kurt [9/9/2012] - AdjustLegPositionsToBodyHeight
-    AdjustLegPositionsToBodyHeight();
-    */
+    
+    // Reset Gait Positions
+    for (uint8_t i = 0; i < 6; i++) {
+        g_Legs[i].gaitPosX = 0;
+        g_Legs[i].gaitPosY = 0;
+        g_Legs[i].gaitPosZ = 0;
+        g_Legs[i].gaitRotY = 0;
+    }
 }
 
 #endif //USEPS2
