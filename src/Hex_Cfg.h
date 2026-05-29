@@ -118,6 +118,9 @@
     #define PS2_CMD      PA7
     #define cSSC_OUT     PA2
     #define cSSC_IN      PA3
+    #define NEO_PIN      PB2
+    #define SDA_PIN      PB9
+    #define SCL_PIN      PB8
 #endif
 
 //====================================================================

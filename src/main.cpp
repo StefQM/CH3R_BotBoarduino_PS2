@@ -21,6 +21,7 @@
 #include <pins_arduino.h>
 #include <SoftwareSerial.h>
 #include "Hex_globals.h"
+#include <BotLight.h>
 #define BalanceDivFactor 6    
 
 //--------------------------------------------------------------------
@@ -55,10 +56,17 @@ bool TerminalMonitor(void);
 void AdjustLegPositionsToBodyHeight(void);
 
 void setup(){
+    delay(2000); // Wait for Serial and power to stabilize
     g_fDebugOutput = false;
 #ifdef DBGSerial    
     DBGSerial.begin(57600);
 #endif
+    Serial.println("[LOG] System Booting...");
+    Serial.flush();
+
+    g_BotLight.init();
+    g_BotLight.setRingPattern(RING_CIRCLEWIPE, 0xFFFFFF, 150); // Power-up Comet (Faster)
+
     g_ServoDriver.Init();
     if (g_InputController.FIsDiagnosticModeRequested()) g_ServoDriver.SSCForwarder();
     
@@ -122,9 +130,11 @@ void loop(void)
         g_InControlState.fHexOn = false;
         g_InControlState.fPrev_HexOn = false;
     } else {
+#ifndef MOCK_HARDWARE
         // [STARTUP TRANSITION]
         if (g_InControlState.fHexOn && !g_InControlState.fPrev_HexOn) {
             Serial.println("[LOG] Engaging motors at height 0");
+            g_BotLight.setRingPattern(RING_BREATH, 0xFFFFFF, 30); // Startup: Breath White
             
             // 1. Snap to sitting position to engage motors without violent movement
             short targetHeight = g_InControlState.BodyPos.y;
@@ -135,7 +145,9 @@ void loop(void)
             g_ServoDriver.CommitServoDriver(g_Hexapod.ServoMoveTime);
             
             MSound(3, 60, 2000, 80, 2250, 100, 2500); // Beep during snap
-            delay(200);
+            
+            // Non-blocking update during delay
+            for(int i=0; i<10; i++) { delay(20); g_BotLight.update(); }
 
             // 2. Smoothly stand up
             Serial.println("[LOG] Standing Up (600ms move)");
@@ -144,7 +156,9 @@ void loop(void)
             g_Hexapod.ServoMoveTime = 600;
             StartUpdateServos();
             g_ServoDriver.CommitServoDriver(g_Hexapod.ServoMoveTime);
-            delay(600); // Block to ensure move completes
+            
+            // Non-blocking update during stand up
+            for(int i=0; i<30; i++) { delay(20); g_BotLight.update(); }
             
             lTransitionStartTime = millis();
             g_Hexapod.Eyes = 1;
@@ -155,7 +169,31 @@ void loop(void)
         // [SHUTDOWN TRANSITION]
         if (!g_InControlState.fHexOn && g_InControlState.fPrev_HexOn) {
             Serial.println("[LOG] Shutting Down (600ms move)");
+            g_BotLight.setRingPattern(RING_COLOR_FADING, 0xFF0000, 40); // Shutdown: Fade Red
             MSound(3, 100, 2500, 80, 2250, 60, 2000); // Beep first
+            UpdateIK(); 
+            g_Hexapod.ServoMoveTime = 600;
+            StartUpdateServos();
+            g_ServoDriver.CommitServoDriver(g_Hexapod.ServoMoveTime);
+            
+            // Non-blocking update during sit down
+            for(int i=0; i<30; i++) { delay(20); g_BotLight.update(); }
+
+            g_BotLight.setRingPattern(RING_OFF);
+            g_BotLight.update(); // Final update to turn off
+            g_ServoDriver.FreeServos();
+            g_Hexapod.Eyes = 0;
+            g_InControlState.fPrev_HexOn = false;
+            return; 
+        }
+#else
+        if (g_InControlState.fHexOn && !g_InControlState.fPrev_HexOn) {
+            lTransitionStartTime = millis();
+            g_Hexapod.Eyes = 1;
+            g_InControlState.fPrev_HexOn = true;
+            return; 
+        }
+        if (!g_InControlState.fHexOn && g_InControlState.fPrev_HexOn) {
             UpdateIK(); 
             g_Hexapod.ServoMoveTime = 600;
             StartUpdateServos();
@@ -166,6 +204,7 @@ void loop(void)
             g_InControlState.fPrev_HexOn = false;
             return; 
         }
+#endif
 
         WriteOutputs();
 
@@ -231,6 +270,11 @@ void loop(void)
 #ifdef OPT_TERMINAL_MONITOR  
     TerminalMonitor();
 #endif
+
+    while (Serial.available()) {
+        g_BotLight.processSerialInput(Serial.read());
+    }
+    g_BotLight.update();
 
     delay(20);
     g_Hexapod.PrevServoMoveTime = g_Hexapod.ServoMoveTime;

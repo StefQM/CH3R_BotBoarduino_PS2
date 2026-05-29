@@ -79,6 +79,7 @@
 #endif
 
 #include "Hex_Globals.h"
+#include <BotLight.h>
 
 #ifdef USEPS2
 #include <PS2X_lib.h>
@@ -250,6 +251,13 @@ void InputController::ControlInput(void)
 #endif // OPT_GPPLAYER
 
             // [Common functions]
+            // Light pattern cycle
+            if (ps2x.ButtonPressed(PSB_L3)) { // Left Stick Click
+                Serial.println("[PS2] PSB_L3 Pressed!");
+                g_BotLight.nextPattern();
+                MSound(1, 50, 2500);
+            }
+
             // Balance mode on/off
             if (ps2x.ButtonPressed(PSB_SQUARE)) {  // Square Button Test
                 g_InControlState.BalanceMode = !g_InControlState.BalanceMode;
