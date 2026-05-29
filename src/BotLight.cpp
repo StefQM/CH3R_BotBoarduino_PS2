@@ -53,6 +53,9 @@ void BotLightController::init() {
     ring.color = 0xFFFFFF; ring.speed = 10;
     ring.frameCounter = 0;
     ring.currentFade = 1.0;
+    ring.cycleLimit = 0;
+    ring.cyclesDone = 0;
+    ring.nextPatternOnComplete = RING_OFF;
     
     for(int i=0; i<NEO_LEGSCOUNT; i++) { 
         legs[i].pattern = LEG_OFF; 
@@ -98,54 +101,67 @@ void BotLightController::update() {
             case RING_BREATH: ringBreath(elapsed); break;
         }
 
-        for(int i=0; i<NEO_LEGSCOUNT; i++) {
-            legs[i].currentBrightness = updateBrightness(legs[i].currentBrightness, legs[i].targetBrightness);
-            bool isPrs = (buttonState[i] == LOW);
+        // Auto-transition logic
+        if (ring.cycleLimit > 0 && ring.cyclesDone >= ring.cycleLimit) {
+            Serial.printf("[BotLight] Cycle limit reached (%u). Transitioning to: %u\n", ring.cycleLimit, ring.nextPatternOnComplete);
+            Serial.flush();
+            setRingPattern(ring.nextPatternOnComplete, ring.color, ring.speed, ring.targetBrightness);
+        }
 
-            switch(legs[i].pattern) {
-                case LEG_OFF: setPixelColorCorrected(i, 0); break;
-                case LEG_COLOR: {
-                    uint8_t r = ((legs[i].color >> 16) & 0xFF) * legs[i].currentBrightness / 255;
-                    uint8_t g = ((legs[i].color >> 8)  & 0xFF) * legs[i].currentBrightness / 255;
-                    uint8_t b = ((legs[i].color >> 0)  & 0xFF) * legs[i].currentBrightness / 255;
-                    setPixelColorCorrected(i, neoStrip.Color(r,g,b)); break;
-                }
-                case LEG_COLOR_FADING: legColorFading(i, elapsed); break;
-                case LEG_COLOR_TOUCH:
-                    if (isPrs) {
+        for(int i=0; i<NEO_LEGSCOUNT; i++) {
+            // Priority 1: Specific leg pattern (if not OFF)
+            // Priority 2: Synchronized ring patterns (Comet, Rainbow, Breath)
+            // Priority 3: OFF
+            if (legs[i].pattern != LEG_OFF) {
+                legs[i].currentBrightness = updateBrightness(legs[i].currentBrightness, legs[i].targetBrightness);
+                bool isPrs = (buttonState[i] == LOW);
+                switch(legs[i].pattern) {
+                    case LEG_COLOR: {
                         uint8_t r = ((legs[i].color >> 16) & 0xFF) * legs[i].currentBrightness / 255;
                         uint8_t g = ((legs[i].color >> 8)  & 0xFF) * legs[i].currentBrightness / 255;
                         uint8_t b = ((legs[i].color >> 0)  & 0xFF) * legs[i].currentBrightness / 255;
-                        setPixelColorCorrected(i, neoStrip.Color(r,g,b));
-                    } else setPixelColorCorrected(i, 0); break;
-                case LEG_COLOR_TOUCH_FADING:
-                    if (isPrs) legs[i].currentFade = 0.0f;
-                    else if (legs[i].currentFade < 1.0f) {
-                        float normalizedSpeed = min((int)legs[i].speed, 200) / 255.0f;
-                        float fade_rate = 0.05f + (normalizedSpeed * normalizedSpeed) * 20.0f;
-                        legs[i].currentFade += fade_rate * (elapsed / 1000.0f);
-                        if (legs[i].currentFade > 1.0f) legs[i].currentFade = 1.0f;
+                        setPixelColorCorrected(i, neoStrip.Color(r,g,b)); break;
                     }
-                    {
-                        float brightness_multiplier = 1.0f - legs[i].currentFade;
-                        uint8_t r = ((legs[i].color >> 16) & 0xFF) * legs[i].currentBrightness * brightness_multiplier / 255;
-                        uint8_t g = ((legs[i].color >> 8)  & 0xFF) * legs[i].currentBrightness * brightness_multiplier / 255;
-                        uint8_t b = ((legs[i].color >> 0)  & 0xFF) * legs[i].currentBrightness * brightness_multiplier / 255;
-                        setPixelColorCorrected(i, neoStrip.Color(r,g,b));
+                    case LEG_COLOR_FADING: legColorFading(i, elapsed); break;
+                    case LEG_COLOR_TOUCH:
+                        if (isPrs) {
+                            uint8_t r = ((legs[i].color >> 16) & 0xFF) * legs[i].currentBrightness / 255;
+                            uint8_t g = ((legs[i].color >> 8)  & 0xFF) * legs[i].currentBrightness / 255;
+                            uint8_t b = ((legs[i].color >> 0)  & 0xFF) * legs[i].currentBrightness / 255;
+                            setPixelColorCorrected(i, neoStrip.Color(r,g,b));
+                        } else setPixelColorCorrected(i, 0); break;
+                    case LEG_COLOR_TOUCH_FADING:
+                        if (isPrs) legs[i].currentFade = 0.0f;
+                        else if (legs[i].currentFade < 1.0f) {
+                            float normalizedSpeed = min((int)legs[i].speed, 200) / 255.0f;
+                            float fade_rate = 0.05f + (normalizedSpeed * normalizedSpeed) * 20.0f;
+                            legs[i].currentFade += fade_rate * (elapsed / 1000.0f);
+                            if (legs[i].currentFade > 1.0f) legs[i].currentFade = 1.0f;
+                        }
+                        {
+                            float brightness_multiplier = 1.0f - legs[i].currentFade;
+                            uint8_t r = ((legs[i].color >> 16) & 0xFF) * legs[i].currentBrightness * brightness_multiplier / 255;
+                            uint8_t g = ((legs[i].color >> 8)  & 0xFF) * legs[i].currentBrightness * brightness_multiplier / 255;
+                            uint8_t b = ((legs[i].color >> 0)  & 0xFF) * legs[i].currentBrightness * brightness_multiplier / 255;
+                            setPixelColorCorrected(i, neoStrip.Color(r,g,b));
+                        }
+                        break;
+                    case LEG_COLOR_FROM_RING: {
+                        uint16_t ringPixelIndex = i * (NEO_RINGCOUNT / NEO_LEGSCOUNT);
+                        uint32_t ringColor = neoStrip.getPixelColor(ringPixelIndex + NEO_LEGSCOUNT);
+                        uint8_t ring_r = (ringColor >> 16) & 0xFF;
+                        uint8_t ring_g = (ringColor >> 8)  & 0xFF;
+                        uint8_t ring_b = (ringColor >> 0)  & 0xFF;
+                        uint8_t final_r = (ring_r * legs[i].currentBrightness) / 255;
+                        uint8_t final_g = (ring_g * legs[i].currentBrightness) / 255;
+                        uint8_t final_b = (ring_b * legs[i].currentBrightness) / 255;
+                        setPixelColorCorrected(i, neoStrip.Color(final_r, final_g, final_b));
+                        break;
                     }
-                    break;
-                case LEG_COLOR_FROM_RING: {
-                    uint16_t ringPixelIndex = i * (NEO_RINGCOUNT / NEO_LEGSCOUNT);
-                    uint32_t ringColor = neoStrip.getPixelColor(ringPixelIndex + NEO_LEGSCOUNT);
-                    uint8_t ring_r = (ringColor >> 16) & 0xFF;
-                    uint8_t ring_g = (ringColor >> 8)  & 0xFF;
-                    uint8_t ring_b = (ringColor >> 0)  & 0xFF;
-                    uint8_t final_r = (ring_r * legs[i].currentBrightness) / 255;
-                    uint8_t final_g = (ring_g * legs[i].currentBrightness) / 255;
-                    uint8_t final_b = (ring_b * legs[i].currentBrightness) / 255;
-                    setPixelColorCorrected(i, neoStrip.Color(final_r, final_g, final_b));
-                    break;
                 }
+            } else if (ring.pattern == RING_OFF || ring.pattern == RING_COLOR) {
+                // Only clear legs if the ring pattern isn't handling them
+                setPixelColorCorrected(i, 0);
             }
         }
         
@@ -178,6 +194,15 @@ void BotLightController::setRingPattern(uint32_t pattern, uint32_t color, uint8_
     ring.speed = speed;
     ring.targetBrightness = brightness;
     ring.currentFade = 1.0;
+    ring.cycleLimit = 0;
+    ring.cyclesDone = 0;
+    ring.nextPatternOnComplete = RING_OFF;
+}
+
+void BotLightController::setRingPatternWithLimit(uint32_t pattern, uint16_t cycles, uint32_t nextPattern, uint32_t color, uint8_t speed, uint8_t brightness) {
+    setRingPattern(pattern, color, speed, brightness);
+    ring.cycleLimit = cycles;
+    ring.nextPatternOnComplete = nextPattern;
 }
 
 void BotLightController::setLegPattern(uint8_t index, uint32_t pattern, uint32_t color, uint8_t speed, uint8_t brightness) {
@@ -248,9 +273,25 @@ void BotLightController::ringRainbow(unsigned long elapsedTime) {
     float speed_factor = 0.1f + (ring.speed / 255.0f) * (10.0f - 0.1f);
     float hue_shift_per_ms = (speed_factor * 255.0f) / (5000.0f);
     rainbowHue += hue_shift_per_ms * elapsedTime;
-    if (rainbowHue >= 256.0f) rainbowHue -= 256.0f;
+    if (rainbowHue >= 256.0f) {
+        rainbowHue -= 256.0f;
+        ring.cyclesDone++;
+    }
+
+    // Update Ring
     for(uint16_t i=NEO_LEGSCOUNT; i<NEO_TOTALCOUNT; i++) {
-        uint8_t pixelHue = (uint8_t)(rainbowHue + (i * 256 / NEO_RINGCOUNT)) % 256;
+        uint8_t pixelHue = (uint8_t)(rainbowHue + ((i-NEO_LEGSCOUNT) * 256 / NEO_RINGCOUNT)) % 256;
+        uint32_t color = colorWheel(pixelHue);
+        uint8_t r = ((color >> 16) & 0xFF) * ring.currentBrightness / 255;
+        uint8_t g = ((color >> 8)  & 0xFF) * ring.currentBrightness / 255;
+        uint8_t b = ((color >> 0)  & 0xFF) * ring.currentBrightness / 255;
+        setPixelColorCorrected(i, neoStrip.Color(r,g,b));
+    }
+
+    // Update Legs (Spatial Sync)
+    for(uint16_t i=0; i<NEO_LEGSCOUNT; i++) {
+        uint16_t ringPixelIndex = i * (NEO_RINGCOUNT / NEO_LEGSCOUNT);
+        uint8_t pixelHue = (uint8_t)(rainbowHue + (ringPixelIndex * 256 / NEO_RINGCOUNT)) % 256;
         uint32_t color = colorWheel(pixelHue);
         uint8_t r = ((color >> 16) & 0xFF) * ring.currentBrightness / 255;
         uint8_t g = ((color >> 8)  & 0xFF) * ring.currentBrightness / 255;
@@ -279,6 +320,12 @@ void BotLightController::ringCircleWipe(unsigned long elapsedTime) {
     float oldHead = circleWipeHead;
     circleWipeHead += (head_move_per_second * elapsedTime / 1000.0f);
     
+    // Cycle Tracking
+    if (circleWipeHead >= NEO_RINGCOUNT) {
+        circleWipeHead -= NEO_RINGCOUNT;
+        ring.cyclesDone++;
+    }
+
     // Fade all pixels
     for(uint16_t i=NEO_LEGSCOUNT; i<NEO_TOTALCOUNT; i++) {
         uint32_t c = neoStrip.getPixelColor(i);
@@ -287,44 +334,71 @@ void BotLightController::ringCircleWipe(unsigned long elapsedTime) {
         setPixelColorCorrected(i, neoStrip.Color(r,g,b));
     }
 
-    // Fill the path from oldHead to currentHead to avoid "holes" during timing lags
-    uint16_t start = (uint16_t)oldHead;
-    uint16_t end = (uint16_t)circleWipeHead;
-    
+    // Calculate Head Color
     uint8_t r_head = ((ring.color >> 16) & 0xFF) * ring.currentBrightness / 255;
     uint8_t g_head = ((ring.color >> 8)  & 0xFF) * ring.currentBrightness / 255;
     uint8_t b_head = ((ring.color >> 0)  & 0xFF) * ring.currentBrightness / 255;
     uint32_t headColor = neoStrip.Color(r_head, g_head, b_head);
 
+    // Fill the path
+    uint16_t start = (uint16_t)oldHead;
+    uint16_t end = (uint16_t)circleWipeHead;
+    
+    auto litLeg = [&](uint16_t ringIdx) {
+        uint8_t legIdx = ringIdx / (NEO_RINGCOUNT / NEO_LEGSCOUNT);
+        if (legIdx < NEO_LEGSCOUNT) setPixelColorCorrected(legIdx, headColor);
+    };
+
+    // Fade legs too
+    for(int i=0; i<NEO_LEGSCOUNT; i++) {
+        uint32_t c = neoStrip.getPixelColor(i);
+        uint8_t r = (c >> 16) & 0xFF, g = (c >> 8)  & 0xFF, b = (c >> 0)  & 0xFF;
+        r = max(0, (int)(r * 0.85f)); g = max(0, (int)(g * 0.85f)); b = max(0, (int)(b * 0.85f));
+        setPixelColorCorrected(i, neoStrip.Color(r,g,b));
+    }
+
     if (end >= start) {
         for (uint16_t i = start; i <= end; i++) {
             setPixelColorCorrected((i % NEO_RINGCOUNT) + NEO_LEGSCOUNT, headColor);
+            litLeg(i % NEO_RINGCOUNT);
         }
     } else {
-        // Wrap around case
         for (uint16_t i = start; i < NEO_RINGCOUNT; i++) {
             setPixelColorCorrected(i + NEO_LEGSCOUNT, headColor);
+            litLeg(i);
         }
         for (uint16_t i = 0; i <= end; i++) {
             setPixelColorCorrected(i + NEO_LEGSCOUNT, headColor);
+            litLeg(i);
         }
     }
-
-    if (circleWipeHead >= NEO_RINGCOUNT) circleWipeHead -= NEO_RINGCOUNT;
 }
 
 void BotLightController::ringBreath(unsigned long elapsedTime) {
     if (ring.speed == 0) { setRingColor(ring.color, ring.currentBrightness); return; }
     float normalizedSpeed = min((int)ring.speed, 200) / 255.0f;
     float breath_rate_per_second = 0.05f + (normalizedSpeed * normalizedSpeed) * 5.0f;
+    
+    float oldFade = ring.currentFade;
     ring.currentFade += (breath_rate_per_second * 2.0f) * (elapsedTime / 1000.0f);
-    if (ring.currentFade >= 2.0f) ring.currentFade -= 2.0f;
+    
+    // Cycle Tracking (One cycle is fade in + fade out, currentFade from 0 to 2)
+    if (ring.currentFade >= 2.0f) {
+        ring.currentFade -= 2.0f;
+        ring.cyclesDone++;
+    }
+
     float brightness_multiplier = 1.0f - abs(1.0f - ring.currentFade);
     uint8_t r = ((ring.color >> 16) & 0xFF) * ring.currentBrightness * brightness_multiplier / 255;
     uint8_t g = ((ring.color >> 8)  & 0xFF) * ring.currentBrightness * brightness_multiplier / 255;
     uint8_t b = ((ring.color >> 0)  & 0xFF) * ring.currentBrightness * brightness_multiplier / 255;
     uint32_t c = neoStrip.Color(r,g,b);
+    
+    // Update Ring
     for(uint16_t i = NEO_LEGSCOUNT; i < NEO_TOTALCOUNT; i++) setPixelColorCorrected(i, c);
+    
+    // Update Legs (Mirror Ring)
+    for(uint16_t i = 0; i < NEO_LEGSCOUNT; i++) setPixelColorCorrected(i, c);
 }
 
 void BotLightController::legColorFading(uint8_t legIndex, unsigned long elapsedTime) {

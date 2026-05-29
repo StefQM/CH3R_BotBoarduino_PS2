@@ -65,7 +65,7 @@ void setup(){
     Serial.flush();
 
     g_BotLight.init();
-    g_BotLight.setRingPattern(RING_CIRCLEWIPE, 0xFFFFFF, 150); // Power-up Comet (Faster)
+    g_BotLight.setRingPatternWithLimit(RING_CIRCLEWIPE, 5, RING_OFF, 0xFFFFFF, 150); // Power-up Comet: 5 cycles, then OFF
 
     g_ServoDriver.Init();
     if (g_InputController.FIsDiagnosticModeRequested()) g_ServoDriver.SSCForwarder();
@@ -134,7 +134,8 @@ void loop(void)
         // [STARTUP TRANSITION]
         if (g_InControlState.fHexOn && !g_InControlState.fPrev_HexOn) {
             Serial.println("[LOG] Engaging motors at height 0");
-            g_BotLight.setRingPattern(RING_BREATH, 0xFFFFFF, 30); // Startup: Breath White
+            // Startup: Breath White, 3 cycles (speed 60), then switch to Rainbow
+            g_BotLight.setRingPatternWithLimit(RING_BREATH, 3, RING_RAINBOW, 0xFFFFFF, 60); 
             
             // 1. Snap to sitting position to engage motors without violent movement
             short targetHeight = g_InControlState.BodyPos.y;
@@ -169,7 +170,8 @@ void loop(void)
         // [SHUTDOWN TRANSITION]
         if (!g_InControlState.fHexOn && g_InControlState.fPrev_HexOn) {
             Serial.println("[LOG] Shutting Down (600ms move)");
-            g_BotLight.setRingPattern(RING_COLOR_FADING, 0xFF0000, 40); // Shutdown: Fade Red
+            // Shutdown: Breath Red, 3 cycles, then OFF
+            g_BotLight.setRingPatternWithLimit(RING_BREATH, 3, RING_OFF, 0xFF0000, 60); 
             MSound(3, 100, 2500, 80, 2250, 60, 2000); // Beep first
             UpdateIK(); 
             g_Hexapod.ServoMoveTime = 600;
@@ -179,8 +181,7 @@ void loop(void)
             // Non-blocking update during sit down
             for(int i=0; i<30; i++) { delay(20); g_BotLight.update(); }
 
-            g_BotLight.setRingPattern(RING_OFF);
-            g_BotLight.update(); // Final update to turn off
+            g_BotLight.update(); // Final update for the current loop
             g_ServoDriver.FreeServos();
             g_Hexapod.Eyes = 0;
             g_InControlState.fPrev_HexOn = false;

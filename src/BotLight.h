@@ -44,6 +44,9 @@ struct RingState {
     uint8_t speed; 
     uint16_t frameCounter; 
     float currentFade; 
+    uint16_t cycleLimit;
+    uint16_t cyclesDone;
+    uint32_t nextPatternOnComplete;
 };
 
 struct Cmd {
@@ -59,6 +62,7 @@ public:
     void processSerialInput(char c);
     
     void setRingPattern(uint32_t pattern, uint32_t color = 0xFFFFFF, uint8_t speed = 10, uint8_t brightness = NEO_BRIGHTNESS);
+    void setRingPatternWithLimit(uint32_t pattern, uint16_t cycles, uint32_t nextPattern, uint32_t color = 0xFFFFFF, uint8_t speed = 10, uint8_t brightness = NEO_BRIGHTNESS);
     void setLegPattern(uint8_t index, uint32_t pattern, uint32_t color = 0xFFFFFF, uint8_t speed = 10, uint8_t brightness = NEO_BRIGHTNESS);
     void nextPattern();
 
