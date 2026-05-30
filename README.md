@@ -18,6 +18,7 @@ This repository contains the modernized, Object-Oriented C++ firmware for the Ly
     - `main.cpp`: Orchestrates the 50Hz control loop.
     - `Hexapod.cpp`: Manages gaits, body balancing, and timing.
     - `Leg.cpp`: Implements 3D Inverse and Forward Kinematics using `float` math.
+    - `BotLight.cpp`: Integrated LED engine and MCP23017 sensor driver.
 - `lib/`: Hardware-specific drivers.
     - `PS2X_lib`: Optimized Hardware SPI driver for the wireless receiver.
 - `test/`: Comprehensive regression suite verifying IK, gait, and servo bitstreams against a verified Golden Master.
@@ -32,7 +33,7 @@ Mapping of physical headers (Top = USB Port side).
 | **B13**  | -        | RS232-Rx   | | **GND**   | GND                      | GND          | 
 | **B14**  | -        | RS232-RTS  | | **3V3**   | n.c.                     | RESETn       | 
 | **B15**  | n.c.     | GND        | | **B10**   | n.c.                     | 5Vin         | 
-| **A8**   | -        | -          | | **B2**    | -                        | (GND/noPU)   | 
+| **A8**   | -        | -          | | **B2**    | **NEOPIXEL** (Eyes/Ring) | (GND/noPU)   | 
 | **A9**   | -        | -          | | **B1**    | -                        | (LED-Y)      | 
 | **A10**  | -        | -          | | **B0**    | -                        | (LED-B)      | 
 | **A11**  | USB-DM   | -          | | **A7**    | **PS2_CMD** (SPI1)       | (LED-R/noPU) | 
@@ -43,8 +44,8 @@ Mapping of physical headers (Top = USB Port side).
 | **B5**   | -        | Vservo 4:1 | | **A2**    | **SSC_TX** (UART2)       | -            |
 | **B6**   | -        | Vlogic 4:1 | | **A1**    | **SOUND**                | -            |
 | **B7**   | -        |            | | **A0**    | -                        |              |
-| **B8**   | -        |            | | **NRST**  | RESETn                   |              |
-| **B9**   | -        |            | | **C15**   | -                        |              |
+| **B8**   | **SCL1** | (I2C1-MCP) | | **NRST**  | RESETn                   |              |
+| **B9**   | **SDA1** | (I2C1-MCP) | | **C15**   | -                        |              |
 | **5V**   | 5Vin     |            | | **C14**   | -                        |              |
 | **GND**  | GND      |            | | **C13**   | -                        |              |
 | **3V3**  | 3V3out   |            | | **VBAT**  | Vbat                     |              |
@@ -53,13 +54,14 @@ Mapping of physical headers (Top = USB Port side).
 
 | Button | Action |
 | :--- | :--- |
-| **Start** | Turn Robot On / Off |
+| **Start** | Turn Robot On (Stand Up + Breath White) / Off (Fade Red + Sit Down) |
 | **Triangle** | Stand Up (65mm) / Sit Down (0mm) |
 | **Square** | Toggle Balance Mode (On/Off) |
 | **Circle** | Toggle Single Leg Mode |
 | **Cross** | Toggle GP Player Mode (Sequence execution) |
 | **L1** | Toggle Translate Mode |
 | **L2** | Toggle Rotate Mode |
+| **L3** | **Cycle LED Patterns** (OFF -> Static -> Fade -> Comet -> Rainbow -> Breath) |
 | **R1** | Toggle Double Leg Lift Height (80mm / 50mm) |
 | **R2** | Toggle Double Travel Length / Start GP Sequence |
 | **R3** | Toggle Walk Method (Mode 1 / Mode 2) |
@@ -69,14 +71,34 @@ Mapping of physical headers (Top = USB Port side).
 | **L-Stick** | Walk / Translate / Rotate X-Z |
 | **R-Stick** | Rotate Y (Yaw) / Shift Y |
 
+## 🌈 BotLight System
+
+The integrated lighting system manages a 60-LED NeoPixel ring and 6 spatial leg LEDs non-blockingly.
+
+### Animation Modes
+- **Comet (`RING_CIRCLEWIPE`):** A white head with a fading tail. Leg LEDs light up in sync as the comet passes.
+- **Rainbow (`RING_RAINBOW`):** Shifting spectrum across the ring and legs.
+- **Breathing (`RING_BREATH`):** Smooth pulsing for status.
+- **Color Fading:** Ring-wide pulses of a specific color.
+
+### Intelligent Sequences
+- **Power-Up:** 5-cycle white comet on boot, then OFF.
+- **Robot ON:** Fast white breathing (3 cycles) -> Transitions to continuous Rainbow.
+- **Robot OFF:** Red breathing (3 cycles) -> Transitions to OFF.
+
+### Serial API (`57600 baud`)
+Trigger custom effects via the USB console using the `#...!` format:
+- `#R_[Pattern]_[Color]_[Speed]_[Brightness]!`
+- *Example:* `#R_3_C=0000FF_S=200!` (Fast blue comet)
+- `#?!` (Returns system status JSON)
+
 ## 🚀 Future Roadmap & Optimizations
 
 1. **Direct PWM (Eliminate SSC-32):** Use the BlackPill's 18+ hardware timers to drive servos natively, removing serial latency and allowing high-frequency updates.
-2. **NeoPixel Integration:** Use reserved pins **`PB0/PB1`** (TIM3) with PWM+DMA for non-blocking status LEDs/Eyes.
-3. **Continuous Trajectories:** Upgrade the Gait Engine to use **Bézier curves** or **Cycloids** for organic, fluid movement instead of discrete steps.
-4. **Sensor Fusion:** Add an **IMU (MPU-6050)** via I2C for autonomous body leveling and tilt compensation.
-5. **Production Polish:** Optional removal of the microsecond profiler ('P' command) once feature development is finalized.
-6. **Test Expansion:** Continue maintaining the **Dual-Validation** test suite (Legacy vs. Float Master) for all new features.
+2. **Continuous Trajectories:** Upgrade the Gait Engine to use **Bézier curves** or **Cycloids** for organic, fluid movement instead of discrete steps.
+3. **Sensor Fusion:** Add an **IMU (MPU-6050)** via I2C for autonomous body leveling and tilt compensation.
+4. **Production Polish:** Optional removal of the microsecond profiler ('P' command) once feature development is finalized.
+5. **Test Expansion:** Continue maintaining the **Dual-Validation** test suite (Legacy vs. Float Master) for all new features.
 
 ## 💻 Building and Flashing
 
