@@ -23,7 +23,7 @@
 #define BUTTONS_COUNT   8
 
 // --- Pattern Enums ---
-enum LegPattern { LEG_OFF=0, LEG_COLOR=1, LEG_COLOR_FADING=2, LEG_COLOR_TOUCH=3, LEG_COLOR_TOUCH_FADING=4, LEG_COLOR_FROM_RING=5 };
+enum LegPattern { LEG_OFF=0, LEG_COLOR=1, LEG_COLOR_FADING=2, LEG_COLOR_TOUCH=3, LEG_COLOR_TOUCH_FADING=4, LEG_COLOR_FROM_RING=5, LEG_CONTACT=6 };
 enum RingPattern { RING_OFF=0, RING_COLOR=1, RING_COLOR_FADING=2, RING_CIRCLEWIPE=3, RING_RAINBOW=4, RING_BREATH=5, RING_COUNT=6 };
 
 // --- Animation State Structs ---
@@ -65,9 +65,14 @@ public:
     void setRingPatternWithLimit(uint32_t pattern, uint16_t cycles, uint32_t nextPattern, uint32_t color = 0xFFFFFF, uint8_t speed = 10, uint8_t brightness = NEO_BRIGHTNESS);
     void setLegPattern(uint8_t index, uint32_t pattern, uint32_t color = 0xFFFFFF, uint8_t speed = 10, uint8_t brightness = NEO_BRIGHTNESS);
     void nextPattern();
+    
+    void setDirection(bool reversed) { isReversed = reversed; }
+    void setLegOffset(int16_t offset) { legOffset = offset; }
 
 private:
     bool isInitialized;
+    bool isReversed;
+    int16_t legOffset;
 #ifndef MOCK_HARDWARE
 private:
     Adafruit_NeoPixel neoStrip;
@@ -80,6 +85,7 @@ private:
 
     uint8_t buttonState[BUTTONS_COUNT];
     uint8_t buttonStatePrev[BUTTONS_COUNT];
+    uint8_t lastSeenButtonState[BUTTONS_COUNT];
     uint8_t buttonRaw[BUTTONS_COUNT];
 
     unsigned long lastButtonReadTime;
@@ -93,6 +99,7 @@ private:
     void getButtonState(uint8_t* stateArray);
     float updateBrightness(float current, uint8_t target, float step = 2.0f);
     void setPixelColorCorrected(uint16_t n, uint32_t c);
+    void blendPixel(uint16_t n, uint32_t c);
     void setRingColor(uint32_t rgbColor, float brightness);
     uint32_t colorWheel(uint8_t WheelPos);
     

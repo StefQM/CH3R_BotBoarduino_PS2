@@ -54,14 +54,14 @@ Mapping of physical headers (Top = USB Port side).
 
 | Button | Action |
 | :--- | :--- |
-| **Start** | Turn Robot On (Stand Up + Breath White) / Off (Fade Red + Sit Down) |
+| **Start** | Turn Robot On (Stand Up) / Off (Sit Down) |
 | **Triangle** | Stand Up (65mm) / Sit Down (0mm) |
 | **Square** | Toggle Balance Mode (On/Off) |
 | **Circle** | Toggle Single Leg Mode |
 | **Cross** | Toggle GP Player Mode (Sequence execution) |
 | **L1** | Toggle Translate Mode |
 | **L2** | Toggle Rotate Mode |
-| **L3** | **Cycle LED Patterns** (OFF -> Static -> Fade -> Comet -> Rainbow -> Breath) |
+| **L3** | Cycle LED Patterns (OFF -> Static -> Fade -> Comet -> Rainbow -> Breath) |
 | **R1** | Toggle Double Leg Lift Height (80mm / 50mm) |
 | **R2** | Toggle Double Travel Length / Start GP Sequence |
 | **R3** | Toggle Walk Method (Mode 1 / Mode 2) |
