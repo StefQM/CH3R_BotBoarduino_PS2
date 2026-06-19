@@ -65,7 +65,7 @@ void setup(){
     Serial.flush();
 
     g_BotLight.init();
-    g_BotLight.setRingPatternWithLimit(RING_CIRCLEWIPE, 5, RING_OFF, 0xFFFFFF, 150); // Power-up Comet: 5 cycles, then OFF
+    g_BotLight.setRingPatternWithLimit(RING_METEORTAIL, 5, RING_OFF, 0xFFFFFF, 150); // Power-up Comet: 5 cycles, then OFF
 
     g_ServoDriver.Init();
     if (g_InputController.FIsDiagnosticModeRequested()) g_ServoDriver.SSCForwarder();
@@ -268,8 +268,8 @@ void loop(void)
         }
     }
 
-#ifdef OPT_TERMINAL_MONITOR  
-    TerminalMonitor();
+#ifdef OPT_TERMINAL_MONITOR
+    // TerminalMonitor(); // Commented out to prevent conflict with BotLight Serial API
 #endif
 
     while (Serial.available()) {

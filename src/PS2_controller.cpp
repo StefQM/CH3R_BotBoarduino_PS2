@@ -114,6 +114,28 @@ static bool DoubleHeightOn;
 static bool DoubleTravelOn;
 static bool WalkMethod;
 
+static bool g_LedModeEnabled = false;
+
+// Predefined colors for LED mode
+static const uint32_t PREDEFINED_COLORS[] = {
+    0xFFFFFF, // White
+    0xFF0000, // Red
+    0x00FF00, // Green
+    0x0000FF, // Blue
+    0xFFFF00, // Yellow
+    0xFF00FF, // Magenta
+    0x00FFFF, // Cyan
+    0xFF8000, // Orange
+    0x8000FF, // Purple
+    0xFF0080  // Pink
+};
+static const size_t NUM_PREDEFINED_COLORS = sizeof(PREDEFINED_COLORS) / sizeof(PREDEFINED_COLORS[0]);
+
+static int8_t s_currentRingPattern = RING_COLOR;
+static int8_t s_currentLegPattern = LEG_CONTACT;
+static int8_t s_currentRingColorIndex = 0; // index in PREDEFINED_COLORS
+static int8_t s_currentLegColorIndex = 0; // index in PREDEFINED_COLORS
+
 // Some external or forward function references
 extern void PS2TurnRobotOff(void);
 
@@ -194,22 +216,185 @@ void InputController::ControlInput(void)
         }
 
         if (g_InControlState.fHexOn) {
-            // [SWITCH MODES]
+            // L1 Button tracking for long press
+            static unsigned long l1_press_start_time = 0;
+            static bool l1_is_pressed = false;
+            static bool l1_handled_long_press = false;
 
-            // Translate mode
-            if (ps2x.ButtonPressed(PSB_L1)) {  // L1 Button Test
-                MSound(1, 50, 2000);  //sound SOUND_PIN, [50\4000]
-                if (ControlMode != TRANSLATEMODE )
-                    ControlMode = TRANSLATEMODE;
-                else {
-                    if (g_InControlState.SelectedLeg==255) 
-                        ControlMode = WALKMODE;
-                    else
-                        ControlMode = SINGLELEGMODE;
+            if (ps2x.ButtonPressed(PSB_L1)) {
+                l1_press_start_time = millis();
+                l1_is_pressed = true;
+                l1_handled_long_press = false;
+            }
+            
+            if (l1_is_pressed && ps2x.Button(PSB_L1)) {
+                if (!l1_handled_long_press && (millis() - l1_press_start_time > 500)) {
+                    g_LedModeEnabled = !g_LedModeEnabled;
+                    l1_handled_long_press = true;
+                    if (g_LedModeEnabled) {
+                        // Enter LED mode: play ascending beeps
+                        MSound(3, 50, 1500, 50, 2000, 50, 2500);
+                    } else {
+                        // Exit LED mode: play descending beeps
+                        MSound(3, 50, 2500, 50, 2000, 50, 1500);
+                    }
+                }
+            }
+            
+            if (l1_is_pressed && !ps2x.Button(PSB_L1)) {
+                l1_is_pressed = false;
+                if (!l1_handled_long_press) {
+                    // Short press L1: Execute standard Translate Mode toggle
+                    MSound(1, 50, 2000);  //sound SOUND_PIN, [50\4000]
+                    if (ControlMode != TRANSLATEMODE)
+                        ControlMode = TRANSLATEMODE;
+                    else {
+                        if (g_InControlState.SelectedLeg==255) 
+                            ControlMode = WALKMODE;
+                        else
+                            ControlMode = SINGLELEGMODE;
+                    }
                 }
             }
 
-            // Rotate mode
+            if (g_LedModeEnabled) {
+                // LED MODE ACTIVE: Intercept all control signals, keep robot completely stationary.
+                g_InControlState.BodyPos.x = 0;
+                g_InControlState.BodyPos.z = 0;
+                g_InControlState.BodyRot1.x = 0;
+                g_InControlState.BodyRot1.y = 0;
+                g_InControlState.BodyRot1.z = 0;
+                g_InControlState.TravelLength.x = 0;
+                g_InControlState.TravelLength.z = 0;
+                g_InControlState.TravelLength.y = 0;
+                g_BodyYShift = 0;
+                
+                // Process LED mode controls
+                static unsigned long last_led_adj_time = 0;
+                unsigned long now = millis();
+                
+                if (now - last_led_adj_time >= 300) {
+                    bool adjusted = false;
+                    
+                    // --- Left Stick: Ring LED Pattern and Color ---
+                    int lx = ps2x.Analog(PSS_LX);
+                    int ly = ps2x.Analog(PSS_LY);
+                    
+                    // L/R: Cycle Ring Pattern
+                    if (lx < 50) { // Left
+                        s_currentRingPattern--;
+                        if (s_currentRingPattern < 0) s_currentRingPattern = RING_COUNT - 1;
+                        g_BotLight.setRingPattern(s_currentRingPattern, PREDEFINED_COLORS[s_currentRingColorIndex], g_BotLight.getRingSpeed(), g_BotLight.getRingBrightness());
+                        MSound(1, 40, 2000);
+                        adjusted = true;
+                    } else if (lx > 200) { // Right
+                        s_currentRingPattern++;
+                        if (s_currentRingPattern >= RING_COUNT) s_currentRingPattern = 0;
+                        g_BotLight.setRingPattern(s_currentRingPattern, PREDEFINED_COLORS[s_currentRingColorIndex], g_BotLight.getRingSpeed(), g_BotLight.getRingBrightness());
+                        MSound(1, 40, 2000);
+                        adjusted = true;
+                    }
+                    
+                    // U/D: Cycle Ring Color
+                    if (!adjusted) {
+                        if (ly < 50) { // Up
+                            s_currentRingColorIndex--;
+                            if (s_currentRingColorIndex < 0) s_currentRingColorIndex = NUM_PREDEFINED_COLORS - 1;
+                            g_BotLight.setRingColor(PREDEFINED_COLORS[s_currentRingColorIndex]);
+                            MSound(1, 30, 2200);
+                            adjusted = true;
+                        } else if (ly > 200) { // Down
+                            s_currentRingColorIndex++;
+                            if (s_currentRingColorIndex >= (int8_t)NUM_PREDEFINED_COLORS) s_currentRingColorIndex = 0;
+                            g_BotLight.setRingColor(PREDEFINED_COLORS[s_currentRingColorIndex]);
+                            MSound(1, 30, 2200);
+                            adjusted = true;
+                        }
+                    }
+                    
+                    // --- Right Stick: Leg LED Pattern and Color ---
+                    int rx = ps2x.Analog(PSS_RX);
+                    int ry = ps2x.Analog(PSS_RY);
+                    
+                    // L/R: Cycle Leg Pattern
+                    if (!adjusted) {
+                        if (rx < 50) { // Left
+                            s_currentLegPattern--;
+                            if (s_currentLegPattern < 0) s_currentLegPattern = 6; // LEG_CONTACT is index 6
+                            g_BotLight.setLegPattern(255, s_currentLegPattern, PREDEFINED_COLORS[s_currentLegColorIndex], g_BotLight.getLegSpeed(0), g_BotLight.getRingBrightness());
+                            MSound(1, 40, 2100);
+                            adjusted = true;
+                        } else if (rx > 200) { // Right
+                            s_currentLegPattern++;
+                            if (s_currentLegPattern > 6) s_currentLegPattern = 0;
+                            g_BotLight.setLegPattern(255, s_currentLegPattern, PREDEFINED_COLORS[s_currentLegColorIndex], g_BotLight.getLegSpeed(0), g_BotLight.getRingBrightness());
+                            MSound(1, 40, 2100);
+                            adjusted = true;
+                        }
+                    }
+                    
+                    // U/D: Cycle Leg Color
+                    if (!adjusted) {
+                        if (ry < 50) { // Up
+                            s_currentLegColorIndex--;
+                            if (s_currentLegColorIndex < 0) s_currentLegColorIndex = NUM_PREDEFINED_COLORS - 1;
+                            g_BotLight.setLegColor(255, PREDEFINED_COLORS[s_currentLegColorIndex]);
+                            MSound(1, 30, 2300);
+                            adjusted = true;
+                        } else if (ry > 200) { // Down
+                            s_currentLegColorIndex++;
+                            if (s_currentLegColorIndex >= (int8_t)NUM_PREDEFINED_COLORS) s_currentLegColorIndex = 0;
+                            g_BotLight.setLegColor(255, PREDEFINED_COLORS[s_currentLegColorIndex]);
+                            MSound(1, 30, 2300);
+                            adjusted = true;
+                        }
+                    }
+                    
+                    // --- DPad: Speed and Custom Attribute Control ---
+                    // U/D: Increase / Decrease Animation Speed for BOTH Ring and Legs
+                    if (!adjusted) {
+                        if (ps2x.Button(PSB_PAD_UP)) {
+                            uint16_t newRingSpeed = min((int)g_BotLight.getRingSpeed() + 10, 255);
+                            uint16_t newLegSpeed = min((int)g_BotLight.getLegSpeed(0) + 10, 255);
+                            g_BotLight.setRingSpeed(newRingSpeed);
+                            g_BotLight.setLegSpeed(255, newLegSpeed);
+                            MSound(1, 30, 2400);
+                            adjusted = true;
+                        } else if (ps2x.Button(PSB_PAD_DOWN)) {
+                            int16_t newRingSpeed = max((int)g_BotLight.getRingSpeed() - 10, 0);
+                            int16_t newLegSpeed = max((int)g_BotLight.getLegSpeed(0) - 10, 0);
+                            g_BotLight.setRingSpeed(newRingSpeed);
+                            g_BotLight.setLegSpeed(255, newLegSpeed);
+                            MSound(1, 30, 1800);
+                            adjusted = true;
+                        }
+                    }
+                    
+                    // L/R: Increase / Decrease Custom Attribute for BOTH Ring and Legs
+                    if (!adjusted) {
+                        if (ps2x.Button(PSB_PAD_RIGHT)) {
+                            uint16_t newRingAttr = min((int)g_BotLight.getRingAttribute() + 5, 100);
+                            uint16_t newLegAttr = min((int)g_BotLight.getLegAttribute(0) + 10, 255);
+                            g_BotLight.setRingAttribute(newRingAttr);
+                            g_BotLight.setLegAttribute(255, newLegAttr);
+                            MSound(1, 30, 2500);
+                            adjusted = true;
+                        } else if (ps2x.Button(PSB_PAD_LEFT)) {
+                            int16_t newRingAttr = max((int)g_BotLight.getRingAttribute() - 5, 0);
+                            int16_t newLegAttr = max((int)g_BotLight.getLegAttribute(0) - 10, 0);
+                            g_BotLight.setRingAttribute(newRingAttr);
+                            g_BotLight.setLegAttribute(255, newLegAttr);
+                            MSound(1, 30, 1700);
+                            adjusted = true;
+                        }
+                    }
+                    
+                    if (adjusted) {
+                        last_led_adj_time = now;
+                    }
+                }
+            } else {
+                // Rotate mode
             if (ps2x.ButtonPressed(PSB_L2)) {  // L2 Button Test
                 MSound(1, 50, 2000);  //sound SOUND_PIN, [50\4000]
                 if (ControlMode != ROTATEMODE)
@@ -251,13 +436,6 @@ void InputController::ControlInput(void)
 #endif // OPT_GPPLAYER
 
             // [Common functions]
-            // Light pattern cycle
-            if (ps2x.ButtonPressed(PSB_L3)) { // Left Stick Click
-                Serial.println("[PS2] PSB_L3 Pressed!");
-                g_BotLight.nextPattern();
-                MSound(1, 50, 2500);
-            }
-
             // Balance mode on/off
             if (ps2x.ButtonPressed(PSB_SQUARE)) {  // Square Button Test
                 g_InControlState.BalanceMode = !g_InControlState.BalanceMode;
@@ -442,6 +620,7 @@ void InputController::ControlInput(void)
 
             // Calculate walking time delay -> ??sTs?? - Should this not be based on the corrected values ? -> g_InControlState.TravelLength/BodyPos/BodyRot1/SLLeg.x/y/z
             g_InControlState.InputTimeDelay = 128 - max(max(abs(ps2x.Analog(PSS_LX) - 128), abs(ps2x.Analog(PSS_LY) - 128)), abs(ps2x.Analog(PSS_RX) - 128));
+            }
         }
 
         // Calculate g_InControlState.BodyPos.y

@@ -10,7 +10,10 @@ test/build/
 *.icloud
 
 # VSCode (optional - some prefer to keep these, but they can contain machine-specific paths)
-# .vscode/
+.vscode/
+
+# Notebooks
+.ipynb_checkpoints/
 
 # Project temporary files
 *.bak
