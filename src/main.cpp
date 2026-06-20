@@ -65,7 +65,9 @@ void setup(){
     Serial.flush();
 
     g_BotLight.init();
-    g_BotLight.setRingPatternWithLimit(RING_METEORTAIL, 5, RING_OFF, 0xFFFFFF, 150); // Power-up Comet: 5 cycles, then OFF
+    g_BotLight.setRingAttribute(31);
+    g_BotLight.setRingPatternWithLimit(RING_METEORTAIL, 5, RING_OFF, 0xFFFFFF, 63);
+    g_BotLight.setLegPattern(255, LEG_COLOR_FROM_RING);
 
     g_ServoDriver.Init();
     if (g_InputController.FIsDiagnosticModeRequested()) g_ServoDriver.SSCForwarder();
@@ -134,8 +136,7 @@ void loop(void)
         // [STARTUP TRANSITION]
         if (g_InControlState.fHexOn && !g_InControlState.fPrev_HexOn) {
             Serial.println("[LOG] Engaging motors at height 0");
-            // Startup: Breath White, 3 cycles (speed 60), then switch to Rainbow
-            g_BotLight.setRingPatternWithLimit(RING_BREATH, 3, RING_RAINBOW, 0xFFFFFF, 60); 
+            g_BotLight.triggerStartupSequence();
             
             // 1. Snap to sitting position to engage motors without violent movement
             short targetHeight = g_InControlState.BodyPos.y;
@@ -170,8 +171,7 @@ void loop(void)
         // [SHUTDOWN TRANSITION]
         if (!g_InControlState.fHexOn && g_InControlState.fPrev_HexOn) {
             Serial.println("[LOG] Shutting Down (600ms move)");
-            // Shutdown: Breath Red, 3 cycles, then OFF
-            g_BotLight.setRingPatternWithLimit(RING_BREATH, 3, RING_OFF, 0xFF0000, 60); 
+            g_BotLight.triggerShutdownSequence();
             MSound(3, 100, 2500, 80, 2250, 60, 2000); // Beep first
             UpdateIK(); 
             g_Hexapod.ServoMoveTime = 600;
@@ -275,6 +275,7 @@ void loop(void)
     while (Serial.available()) {
         g_BotLight.processSerialInput(Serial.read());
     }
+    g_BotLight.setMovementVector(g_InControlState.TravelLength.x, g_InControlState.TravelLength.z);
     g_BotLight.update();
 
     delay(20);

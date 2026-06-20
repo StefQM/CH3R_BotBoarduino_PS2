@@ -32,8 +32,7 @@ Once **LED Mode** is enabled, the controller inputs are mapped as follows:
 
 The D-Pad Left/Right inputs control pattern-specific attributes. For example:
 -   **Meteor Tail (`RING_METEORTAIL`):** Dynamically adjusts the length of the trailing fade (meteor tail).
-    -   *D-Pad Right* lengthens the tail (slower fade/longer trailing tail).
-    -   *D-Pad Left* shortens the tail (faster fade/shorter trailing tail).
+-   **Touch & Untouch Waves (`LEG_COLOR_TOUCH` through `LEG_COLOR_UNTOUCH_FADING`):** Sets the maximum width of the ring wave (between `0` and `10` pixels on each side) when triggered.
 
 ---
 
@@ -116,8 +115,8 @@ The following tables list the available patterns and their corresponding numeric
 | 0  | `LEG_OFF`                | Turns the leg LED off.                                                      |
 | 1  | `LEG_COLOR`              | Displays a solid color.                                                     |
 | 2  | `LEG_COLOR_FADING`       | **One-Shot Fade:** Blends the requested color directly down to Black/OFF over time (no repeat). |
-| 3  | `LEG_COLOR_TOUCH`        | Shows the color only when the leg's foot sensor is pressed.                 |
-| 4  | `LEG_COLOR_TOUCH_FADING` | **Fades Out on Press:** The color appears on touch and immediately starts fading out to Black over time (releasing has no action). |
-| 5  | `LEG_COLOR_FROM_RING`    | The leg LED mirrors the color of the adjacent section of the main ring.     |
-| 6  | `LEG_CONTACT`            | **Interactive Mode:** Shows a dynamic expanding wave of the leg's defined Color on the ring when lifted. |
-| 7  | `LEG_CONTACT_FADING`     | **Inward-Shrinking Wave:** Lifting a foot triggers a wave of the leg's defined Color that dynamically shrinks inwards back to the center while fading into the active background ring pattern. |
+| 3  | `LEG_COLOR_TOUCH`        | **Interactive Mode (Press):** Shows the leg's defined Color on the leg and triggers an expanding ring wave when the foot is pressed. |
+| 4  | `LEG_COLOR_TOUCH_FADING` | **Fades Out on Press:** The color and ring wave appear instantly on touch and immediately start fading/shrinking back inwards over time (releasing has no action). |
+| 5  | `LEG_COLOR_UNTOUCH`      | **Interactive Mode (Release):** Shows the leg's defined Color on the leg and triggers an expanding ring wave when the foot is lifted (releasing microswitch). |
+| 6  | `LEG_COLOR_UNTOUCH_FADING`| **Inward-Shrinking Wave:** Lifting a foot triggers a wave of the leg's defined Color that dynamically shrinks inwards back to the center while fading into the active background ring pattern. |
+| 7  | `LEG_COLOR_FROM_RING`    | The leg LED mirrors the color of the adjacent section of the main ring.     |

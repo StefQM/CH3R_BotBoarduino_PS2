@@ -132,7 +132,7 @@ static const uint32_t PREDEFINED_COLORS[] = {
 static const size_t NUM_PREDEFINED_COLORS = sizeof(PREDEFINED_COLORS) / sizeof(PREDEFINED_COLORS[0]);
 
 static int8_t s_currentRingPattern = RING_COLOR;
-static int8_t s_currentLegPattern = LEG_CONTACT;
+static int8_t s_currentLegPattern = LEG_COLOR_UNTOUCH;
 static int8_t s_currentRingColorIndex = 0; // index in PREDEFINED_COLORS
 static int8_t s_currentLegColorIndex = 0; // index in PREDEFINED_COLORS
 
@@ -212,6 +212,7 @@ void InputController::ControlInput(void)
                 //Turn on
                 g_InControlState.fHexOn = 1;
                 g_BodyYOffset = 65;
+                g_BotLight.triggerStartupSequence();
             }
         }
 
@@ -320,13 +321,13 @@ void InputController::ControlInput(void)
                     if (!adjusted) {
                         if (rx < 50) { // Left
                             s_currentLegPattern--;
-                            if (s_currentLegPattern < 0) s_currentLegPattern = 6; // LEG_CONTACT is index 6
+                            if (s_currentLegPattern < 0) s_currentLegPattern = 7;
                             g_BotLight.setLegPattern(255, s_currentLegPattern, PREDEFINED_COLORS[s_currentLegColorIndex], g_BotLight.getLegSpeed(0), g_BotLight.getRingBrightness());
                             MSound(1, 40, 2100);
                             adjusted = true;
                         } else if (rx > 200) { // Right
                             s_currentLegPattern++;
-                            if (s_currentLegPattern > 6) s_currentLegPattern = 0;
+                            if (s_currentLegPattern > 7) s_currentLegPattern = 0;
                             g_BotLight.setLegPattern(255, s_currentLegPattern, PREDEFINED_COLORS[s_currentLegColorIndex], g_BotLight.getLegSpeed(0), g_BotLight.getRingBrightness());
                             MSound(1, 40, 2100);
                             adjusted = true;
@@ -645,6 +646,8 @@ void InputController::ControlInput(void)
 //==============================================================================
 void PS2TurnRobotOff(void)
 {
+    g_BotLight.triggerShutdownSequence();
+
     // Turn off
     g_InControlState.BodyPos.x = 0;
     g_InControlState.BodyPos.y = 0;

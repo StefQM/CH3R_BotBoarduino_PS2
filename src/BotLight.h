@@ -23,8 +23,8 @@
 #define BUTTONS_COUNT   8
 
 // --- Pattern Enums ---
-enum LegPattern { LEG_OFF=0, LEG_COLOR=1, LEG_COLOR_FADING=2, LEG_COLOR_TOUCH=3, LEG_COLOR_TOUCH_FADING=4, LEG_COLOR_FROM_RING=5, LEG_CONTACT=6, LEG_CONTACT_FADING=7 };
-enum RingPattern { RING_OFF=0, RING_COLOR=1, RING_COLOR_FADING=2, RING_METEORTAIL=3, RING_RAINBOW=4, RING_BREATH=5, RING_COUNT=6 };
+enum LegPattern { LEG_OFF=0, LEG_COLOR=1, LEG_COLOR_FADING=2, LEG_COLOR_TOUCH=3, LEG_COLOR_TOUCH_FADING=4, LEG_COLOR_UNTOUCH=5, LEG_COLOR_UNTOUCH_FADING=6, LEG_COLOR_FROM_RING=7 };
+enum RingPattern { RING_OFF=0, RING_COLOR=1, RING_COLOR_FADING=2, RING_METEORTAIL=3, RING_RAINBOW=4, RING_BREATH=5, RING_DIRECTION=6, RING_COUNT=7 };
 
 // --- Animation State Structs ---
 struct LegState { 
@@ -49,8 +49,14 @@ struct RingState {
     uint16_t cycleLimit;
     uint16_t cyclesDone;
     uint32_t nextPatternOnComplete;
+    uint32_t nextColorOnComplete;
+    uint8_t nextSpeedOnComplete;
     uint8_t attribute;
     uint32_t originalColor;
+    uint32_t previousPattern;
+    uint8_t previousSpeed;
+    uint8_t previousBrightness;
+    uint8_t transitionPhase;
 };
 
 struct Cmd {
@@ -66,13 +72,17 @@ public:
     void processSerialInput(char c);
     
     void setRingPattern(uint32_t pattern, uint32_t color = 0xFFFFFF, uint8_t speed = 10, uint8_t brightness = NEO_BRIGHTNESS);
-    void setRingPatternWithLimit(uint32_t pattern, uint16_t cycles, uint32_t nextPattern, uint32_t color = 0xFFFFFF, uint8_t speed = 10, uint8_t brightness = NEO_BRIGHTNESS);
+    void setRingPatternWithLimit(uint32_t pattern, uint16_t cycles, uint32_t nextPattern, uint32_t color = 0xFFFFFF, uint8_t speed = 10, uint8_t brightness = NEO_BRIGHTNESS, uint32_t nextColor = 0xFFFFFF, uint8_t nextSpeed = 10);
     void setLegPattern(uint8_t index, uint32_t pattern, uint32_t color = 0xFFFFFF, uint8_t speed = 10, uint8_t brightness = NEO_BRIGHTNESS);
     void nextPattern();
+    
+    void triggerStartupSequence();
+    void triggerShutdownSequence();
     
     void setRingColor(uint32_t color) { ring.color = color; }
     void setRingSpeed(uint8_t speed) { ring.speed = speed; }
     void setRingAttribute(uint8_t attribute) { ring.attribute = attribute; }
+    void setMovementVector(int16_t x, int16_t z) { moveX = x; moveZ = z; }
     void setLegColor(uint8_t index, uint32_t color);
     void setLegSpeed(uint8_t index, uint8_t speed);
     void setLegAttribute(uint8_t index, uint8_t attribute);
@@ -117,6 +127,11 @@ private:
     unsigned long lastLedUpdateTime;
     float rainbowHue;
     float circleWipeHead;
+    float currentAngle;
+    int16_t moveX;
+    int16_t moveZ;
+    unsigned long lastMoveTime;
+    bool isAutoDirectionMode;
 
     char serialCommandBuffer[128];
     size_t serialCommandIndex;
@@ -135,6 +150,7 @@ private:
     void ringColorFading(unsigned long elapsedTime);
     void ringCircleWipe(unsigned long elapsedTime);
     void ringBreath(unsigned long elapsedTime);
+    void ringDirection(unsigned long elapsedTime);
     void legColorFading(uint8_t legIndex, unsigned long elapsedTime);
 };
 
